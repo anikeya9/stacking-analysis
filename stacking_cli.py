@@ -3,25 +3,36 @@
 Command-line interface for stacking analysis.
 
 This script provides a user-friendly command-line interface
-for analyzing bilayer stacking configurations.
+for analyzing bilayer stacking configurations from LAMMPS dump files.
 """
 
 import argparse
 import sys
 from stacking_analysis import StackingAnalyzer
+from stacking_analysis.io_utils import validate_lammps_dump, read_lammps_dump_metadata
 
 
 def main():
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
-        description="Analyze stacking configurations in bilayer materials",
+        description="Analyze stacking configurations in bilayer materials from LAMMPS dump files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s input.xyz
-  %(prog)s input.xyz -o results.stack
-  %(prog)s input.xyz --r-tol 0.7 --voxel-size 200
-  %(prog)s input.xyz --processes 8 --quiet
+  %(prog)s dump.lammpstrj
+  %(prog)s dump.lammpstrj -o results.stack
+  %(prog)s dump.lammpstrj --r-tol 0.7 --voxel-size 200
+  %(prog)s dump.lammpstrj --processes 8 --quiet
+
+Input File Format:
+  The input must be a single-frame LAMMPS dump file with at least these columns:
+    id, type, x, y, z
+  
+  Additional columns (fx, fy, fz, energies, stresses, etc.) are automatically 
+  detected and preserved but not used in the analysis.
+  
+  To extract a single frame from a multi-frame dump:
+    tail -n $((N_atoms + 9)) dump.lammpstrj > single_frame.dump
 
 Stacking Types:
   AA   - Type 5: Perfect AA stacking
@@ -39,7 +50,7 @@ For more information, visit: https://github.com/anikeya9/stacking-analysis
     # Required arguments
     parser.add_argument(
         'input',
-        help='Input structure file path'
+        help='Input LAMMPS dump file (single frame)'
     )
     
     # Optional arguments
@@ -81,7 +92,7 @@ For more information, visit: https://github.com/anikeya9/stacking-analysis
         '--skiprows',
         type=int,
         default=9,
-        help='Number of header rows to skip in input file (default: 9)'
+        help='Number of header rows to skip in input file (default: 9 for LAMMPS dump)'
     )
     
     parser.add_argument(
@@ -98,6 +109,18 @@ For more information, visit: https://github.com/anikeya9/stacking-analysis
     )
     
     parser.add_argument(
+        '--validate',
+        action='store_true',
+        help='Validate input file format and exit (does not run analysis)'
+    )
+    
+    parser.add_argument(
+        '--show-metadata',
+        action='store_true',
+        help='Show LAMMPS dump file metadata and exit'
+    )
+    
+    parser.add_argument(
         '--version',
         action='version',
         version='%(prog)s 1.0.0'
@@ -105,9 +128,50 @@ For more information, visit: https://github.com/anikeya9/stacking-analysis
     
     args = parser.parse_args()
     
+    # Validate input file if requested
+    if args.validate:
+        is_valid, message = validate_lammps_dump(args.input)
+        if is_valid:
+            print(f"✓ {message}")
+            print(f"  File: {args.input}")
+            return 0
+        else:
+            print(f"✗ Invalid LAMMPS dump file: {message}", file=sys.stderr)
+            print(f"  File: {args.input}", file=sys.stderr)
+            return 1
+    
+    # Show metadata if requested
+    if args.show_metadata:
+        try:
+            metadata = read_lammps_dump_metadata(args.input)
+            print(f"LAMMPS Dump File Metadata")
+            print(f"=" * 50)
+            print(f"File: {args.input}")
+            print(f"Timestep: {metadata.get('timestep', 'N/A')}")
+            print(f"Number of atoms: {metadata.get('n_atoms', 'N/A')}")
+            if 'box_bounds' in metadata:
+                bounds = metadata['box_bounds']
+                print(f"Box bounds:")
+                print(f"  x: {bounds[0][0]:.3f} to {bounds[0][1]:.3f}")
+                print(f"  y: {bounds[1][0]:.3f} to {bounds[1][1]:.3f}")
+                print(f"  z: {bounds[2][0]:.3f} to {bounds[2][1]:.3f}")
+            if 'columns' in metadata:
+                print(f"Columns: {metadata['columns']}")
+            return 0
+        except Exception as e:
+            print(f"Error reading metadata: {e}", file=sys.stderr)
+            return 1
+    
     # Set output path
     if args.output is None:
         args.output = f"{args.input}.stack"
+    
+    # Quick validation before starting analysis
+    if not args.quiet:
+        is_valid, message = validate_lammps_dump(args.input)
+        if not is_valid:
+            print(f"Warning: {message}", file=sys.stderr)
+            print("Attempting to proceed anyway...\n", file=sys.stderr)
     
     # Run analysis
     try:
@@ -133,20 +197,28 @@ For more information, visit: https://github.com/anikeya9/stacking-analysis
             for s_type, count in sorted(stats['type_counts'].items()):
                 percentage = stats['type_percentages'][s_type]
                 print(f"  {s_type:4s}: {count:6d} ({percentage:5.2f}%)")
+            print(f"\nOutput written to: {args.output}")
         
         return 0
         
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
+        print("\nTip: Make sure the input file path is correct.", file=sys.stderr)
         return 1
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
+        print("\nTip: Use --validate to check if your file format is correct.", file=sys.stderr)
+        print("     Use --show-metadata to see file details.", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print("\nAnalysis interrupted by user", file=sys.stderr)
+        print("\n\nAnalysis interrupted by user", file=sys.stderr)
         return 130
     except Exception as e:
         print(f"Unexpected error: {e}", file=sys.stderr)
+        if not args.quiet:
+            import traceback
+            print("\nFull traceback:", file=sys.stderr)
+            traceback.print_exc()
         return 1
 
 
