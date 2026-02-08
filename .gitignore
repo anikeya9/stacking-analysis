@@ -28,3 +28,6 @@ test_results/
 .DS_Store
 Thumbs.db
 
+examples/dump.nve
+*.nve
+examples/*.dump
