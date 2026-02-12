@@ -1,6 +1,11 @@
 # Stacking Analysis
 
-> A high-performance tool for analyzing atomic stacking configurations in bilayer materials
+> A high-performance tool for analyzing atomic stacking configurations in bilayer materials. This repository contains the stacking analysis code used in:
+
+Aditya, A. et al., 
+“Emerging Ferroelectric Domains: Stacking and Rotational Landscape of MoS₂ Moiré Bilayers,”
+ACS Nano (2026). Accepted; in press.
+
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
